@@ -74,7 +74,6 @@ class Ranking:
 
         sessions_popularity = sessions_cleaned.groupby(['year', 'week', 'track_id']).agg({'popularity': 'sum'}).reset_index()
         sessions_popularity = sessions_popularity.sort_values(by=['year', 'week', 'popularity'], ascending=[True, True, False])
-        sessions_popularity.to_csv("popularity.csv", index=False)
         return sessions_popularity
 
 
@@ -102,7 +101,7 @@ class Ranking:
             limit = self.limit
         num_rows = int(len(df) * limit // 1)
 
-        return df.iloc[:num_rows]
+        return df.iloc[:num_rows][["track_id"]].copy()
 
     def get_tracks_for_week(self, week_from: tuple) -> pd.DataFrame:
         selected_rows = self.sessions_popularity[
@@ -113,7 +112,7 @@ class Ranking:
         return tracks
 
     def make_test(self, date: tuple):
-        tracks_for_past_weeks = self.get_frame(date)[["track_id"]]
+        tracks_for_past_weeks = self.get_frame(date)
         future_week = increase_week(date, by=self.week_count)
         tracks_for_test = self.get_tracks_for_week(future_week)
         merged_df = tracks_for_test.merge(tracks_for_past_weeks, how="inner", on="track_id")
@@ -130,6 +129,6 @@ Ilość trafień % w tygodniu {increase_week(date, by=self.week_count)}: {self.m
 
 
 if __name__ == "__main__":
-    r = Ranking("datav1/sessions.jsonl", weeks=10, limit=0.25)
+    r = Ranking("datav1/sessions.jsonl", weeks=3, limit=0.25)
     r.group_by_weeks()
     r.make_test_for_every_frame()
