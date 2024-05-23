@@ -2,6 +2,8 @@ import pandas as pd
 import json
 import numpy as np
 import datetime
+from tqdm import tqdm
+from matplotlib import pyplot as plt
 
 
 def jsonl2df(path):
@@ -40,9 +42,21 @@ class Ranking:
         "limit",
     ]
 
-    def __init__(self, path, *, weeks=1, limit=1) -> None:
-        self.sessions = jsonl2df(path).dropna()
-        self.sessions_popularity = self.count_popularity()
+    def __init__(self, *, path=None, from_csv=None, weeks=1, limit=1) -> None:
+        self.sessions = None
+        try:
+            self.sessions_popularity = pd.read_csv(from_csv)
+        except Exception:
+            print(f"Couldn't find {from_csv}")
+            self.sessions = jsonl2df(path).dropna()
+            self.sessions_popularity = self.count_popularity()
+        # Trzeba jeszcze raz to zrobić, żeby zrobić odpowiedni typ bo astype albo apply
+        # nie działa a pandas to wszystko wypisuje jako object
+        # Inaczej w group_by_weeks nie zadziała isin
+        # ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓
+        self.sessions_popularity["week_tuple"] = list(
+            zip(self.sessions_popularity["year"], self.sessions_popularity["week"])
+        )
         self.sessions_popularity_per_weeks = {}
         self.week_count = weeks
         self.limit = limit
@@ -62,14 +76,17 @@ class Ranking:
         )
         return sessions_cleaned
 
+    def to_csv(self, filename: str) -> None:
+        self.sessions_popularity = self.sessions_popularity.drop(columns=["week_tuple"])
+        self.sessions_popularity.to_csv(filename, index=False)
+
     def count_popularity(self) -> pd.DataFrame:
         epsilon = pd.Timedelta(
             minutes=1
-        )  # mniej niż minutę jak słucha możemy uznać że mało ciekawe, więc nie popularne
-        #  TODO zamienić minute na 10% np
+        )
         sessions_cleaned = self.__clean()
         len_cleaned_sessions = len(sessions_cleaned)
-        for idx, (_, row) in enumerate(sessions_cleaned.iterrows()):
+        for idx, (_, row) in tqdm(enumerate(sessions_cleaned.iterrows())):
             if len_cleaned_sessions - 1 == idx:
                 break
             next_row = sessions_cleaned.iloc[idx + 1]
@@ -104,10 +121,7 @@ class Ranking:
         for _ in range(self.week_count - 1):
             next_weeks.append(increase_week(next_weeks[-1]))
 
-        self.sessions_popularity["week_tuple"] = list(
-            zip(self.sessions_popularity["year"], self.sessions_popularity["week"])
-        )
-        for _ in range(lenght - self.week_count):
+        for _ in tqdm(range(lenght - self.week_count)):
             selected_rows = self.sessions_popularity[
                 self.sessions_popularity["week_tuple"].isin(next_weeks)
             ]
@@ -166,8 +180,32 @@ Ilość trafień % w tygodniu {increase_week(date, by=self.week_count)}: {self.m
             )
             date = increase_week(date)
 
+    def make_plot(self, track_id) -> None:
+        year, week = (
+            self.sessions_popularity.iloc[0]["year"],
+            self.sessions_popularity.iloc[0]["week"],
+        )
+        week_from = (year, week)
+        popularity_in_time = []
+        weeks = []
+        for _ in range(len(self.sessions_popularity_per_weeks.keys())):
+            week_to = increase_week(week_from, by=self.week_count - 1)
+            frame: pd.DataFrame = self.sessions_popularity_per_weeks.get((week_from, week_to))
+            x: pd.DataFrame = frame[frame["track_id"] == track_id]
+            if not x.empty:
+                popularity_in_time.append(x.iloc[0]["popularity"])
+                weeks.append((week_from, week_to))
+            week_from = increase_week(week_from)
+        plt.figure(figsize=(10, 6))
+        plt.plot(range(len(weeks)), popularity_in_time, marker='o', linestyle='-', color='r')
+        plt.xlabel('Tygodnie')
+        plt.ylabel('Popularność')
+        plt.title(f'Popularność dla {track_id}')
+        plt.xticks(range(len(weeks)), [f'{f[0]}-{f[1]}, {to[0]}-{to[1]}' for f, to in weeks], rotation=45)
+        plt.tight_layout()
+        plt.show()
 
 if __name__ == "__main__":
-    r = Ranking("datav2/sessions.jsonl", weeks=3, limit=0.25)
+    r = Ranking("datav2/sessions.jsonl", weeks=3, limit=1)
     r.group_by_weeks()
-    r.make_test_for_every_frame(random=True)
+    r.make_test_for_every_frame()
