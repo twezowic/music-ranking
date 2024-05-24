@@ -80,6 +80,13 @@ class Ranking:
         self.sessions_popularity = self.sessions_popularity.drop(columns=["week_tuple"])
         self.sessions_popularity.to_csv(filename, index=False)
 
+    def _get_first_week(self) -> tuple[int, int]:
+        year, week = (
+            self.sessions_popularity.iloc[0]["year"],
+            self.sessions_popularity.iloc[0]["week"],
+        )
+        return year, week
+
     def count_popularity(self) -> pd.DataFrame:
         epsilon = pd.Timedelta(
             minutes=1
@@ -112,12 +119,8 @@ class Ranking:
         return sessions_popularity
 
     def group_by_weeks(self) -> None:
-        year, week = (
-            self.sessions_popularity.iloc[0]["year"],
-            self.sessions_popularity.iloc[0]["week"],
-        )
         lenght = len(self.sessions_popularity.groupby(["year", "week"]))
-        next_weeks = [(year, week)]
+        next_weeks = [self._get_first_week()]
         for _ in range(self.week_count - 1):
             next_weeks.append(increase_week(next_weeks[-1]))
 
@@ -144,10 +147,11 @@ class Ranking:
             limit = self.limit
         num_rows = int(len(df) * limit // 1)
         if not random:
-            df = df.iloc[:num_rows][["track_id"]].copy()
+            df = df.iloc[:num_rows]
         else:
             df = df.sample(num_rows)
-        return df
+        df = df[df["popularity"] > 0]
+        return df[["track_id"]].copy()
 
     def get_tracks_for_week(self, week_from: tuple) -> pd.DataFrame:
         selected_rows = self.sessions_popularity[
@@ -157,7 +161,7 @@ class Ranking:
         tracks = selected_rows[["track_id"]].copy()
         return tracks
 
-    def make_test(self, date: tuple, *, random=False):
+    def make_test(self, date: tuple, *, random=False) -> np.float64:
         tracks_for_past_weeks = self.get_frame(date, random=random)
         future_week = increase_week(date, by=self.week_count)
         tracks_for_test = self.get_tracks_for_week(future_week)
@@ -168,17 +172,30 @@ class Ranking:
         return round(id_counts, 3)
 
     def make_test_for_every_frame(self, random=False):
-        year, week = (
-            self.sessions_popularity.iloc[0]["year"],
-            self.sessions_popularity.iloc[0]["week"],
-        )
-        date = (year, week)
-        for _ in range(len(self.sessions_popularity_per_weeks.keys())):
-            print(
+        date = self._get_first_week()
+        to_print = []
+        for _ in tqdm(range(len(self.sessions_popularity_per_weeks.keys()))):
+            to_print.append(
                 f"Ranking z tygodni: {date}-{increase_week(date, by=self.week_count-1)}. \
 Ilość trafień % w tygodniu {increase_week(date, by=self.week_count)}: {self.make_test(date, random=random)}%"
             )
             date = increase_week(date)
+        for line in to_print:
+            print(line)
+
+    def compare_to_basic(self):
+        date = self._get_first_week()
+        to_print = ["Period:    Which is better?"]
+        for _ in tqdm(range(len(self.sessions_popularity_per_weeks.keys()))):
+            basic = self.make_test(date, random=True)
+            extended = self.make_test(date, random=False)
+            to_print.append(
+                f"{date}-{increase_week(date, by=self.week_count-1)}: \
+    {'Basic' if basic > extended else 'Extended'}"
+            )
+            date = increase_week(date)
+        for line in to_print:
+            print(line)
 
     def make_plot(self, track_id) -> None:
         year, week = (
@@ -204,6 +221,12 @@ Ilość trafień % w tygodniu {increase_week(date, by=self.week_count)}: {self.m
         plt.xticks(range(len(weeks)), [f'{f[0]}-{f[1]}, {to[0]}-{to[1]}' for f, to in weeks], rotation=45)
         plt.tight_layout()
         plt.show()
+
+    def get_tracks_for_last_week(self) -> pd.DataFrame:
+        last_week = list(self.sessions_popularity_per_weeks.keys())[-1][0]
+        tracks = self.get_frame(last_week)
+        return tracks
+
 
 if __name__ == "__main__":
     r = Ranking("datav2/sessions.jsonl", weeks=3, limit=1)
