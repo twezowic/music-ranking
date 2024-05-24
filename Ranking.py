@@ -43,6 +43,20 @@ class Ranking:
     ]
 
     def __init__(self, *, path=None, from_csv=None, weeks=1, limit=1) -> None:
+        """
+        Making ranking for every period and 
+
+        Parameters
+        ----------
+        path : str
+            Path to jsonl file to read sessions and calculate popularity. First time you have to run with path.
+        from_csv : str
+            Name of csv file to load previously converted data.
+        weeks : int
+            Weeks as the period of time in which popularity is calculated.
+        limit : float
+            From 0 to 1, part of tracks_id which will be returned.
+        """
         self.sessions = None
         try:
             self.sessions_popularity = pd.read_csv(from_csv)
@@ -50,10 +64,6 @@ class Ranking:
             print(f"Couldn't find {from_csv}")
             self.sessions = jsonl2df(path).dropna()
             self.sessions_popularity = self.count_popularity()
-        # Trzeba jeszcze raz to zrobić, żeby zrobić odpowiedni typ bo astype albo apply
-        # nie działa a pandas to wszystko wypisuje jako object
-        # Inaczej w group_by_weeks nie zadziała isin
-        # ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓ ↓
         self.sessions_popularity["week_tuple"] = list(
             zip(self.sessions_popularity["year"], self.sessions_popularity["week"])
         )
