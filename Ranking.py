@@ -271,10 +271,6 @@ Ilość trafień % w tygodniu {increase_week(date, by=self.week_count)}: {self.m
             zip(self.sessions_popularity["year"], self.sessions_popularity["week"])
         )
         self.group_by_weeks()
-        
-
-        
-        
 
 
 if __name__ == "__main__":
