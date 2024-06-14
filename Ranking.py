@@ -4,18 +4,7 @@ import numpy as np
 import datetime
 from tqdm import tqdm
 from matplotlib import pyplot as plt
-
-
-def jsonl2df(path):
-    with open(path) as fh:
-        lines = fh.read().splitlines()
-
-    df_inter = pd.DataFrame(lines)
-    df_inter.columns = ["json_element"]
-
-    df_inter["json_element"].apply(json.loads)
-
-    return pd.json_normalize(df_inter["json_element"].apply(json.loads))
+from prepare_data import jsonl2df
 
 
 def increase_week(args, *, by=1):
