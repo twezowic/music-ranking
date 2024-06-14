@@ -52,10 +52,6 @@ def prepare_grouping(tracks="datav2/artists.jsonl", artists="datav2/tracks.jsonl
         genres_en = pd.get_dummies(prepared_data['genres'].apply(pd.Series).stack()).groupby(level=0).sum()
         prepared_data = pd.concat([prepared_data, genres_en], axis=1)
 
-        # One-hot encoding of artists
-        # artists_en = pd.get_dummies(prepared_data['id_artist']).groupby(level=0).sum()
-        # prepared_data = pd.concat([prepared_data, artists_en], axis=1)
-
     prepared_data = prepared_data.drop(columns=['id_artist', 'genres'])
 
     return prepared_data
