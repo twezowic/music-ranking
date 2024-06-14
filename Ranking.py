@@ -71,9 +71,9 @@ class Ranking:
         self.week_count = weeks
         self.limit = limit
 
-    def __clean(self) -> pd.DataFrame:
-        sessions_cleaned = self.sessions[
-            self.sessions["event_type"].isin(["play", "skip"])
+    def __clean(self, data: pd.DataFrame) -> pd.DataFrame:
+        sessions_cleaned = data[
+            data["event_type"].isin(["play", "skip"])
         ].copy()
         sessions_cleaned["timestamp"] = pd.to_datetime(
             sessions_cleaned["timestamp"], errors="coerce"
@@ -97,11 +97,12 @@ class Ranking:
         )
         return year, week
 
-    def count_popularity(self) -> pd.DataFrame:
+    def count_popularity(self, sessions: pd.DataFrame=None) -> pd.DataFrame:
         epsilon = pd.Timedelta(
             minutes=1
         )
-        sessions_cleaned = self.__clean()
+        sessions_to_clean = sessions if sessions is not None else self.sessions
+        sessions_cleaned = self.__clean(sessions_to_clean)
         len_cleaned_sessions = len(sessions_cleaned)
         for idx, (_, row) in tqdm(enumerate(sessions_cleaned.iterrows())):
             if len_cleaned_sessions - 1 == idx:
@@ -128,25 +129,30 @@ class Ranking:
         )
         return sessions_popularity
 
+    def make_group(self, next_weeks: list) -> tuple[pd.DataFrame, tuple[str, str]]:
+        selected_rows = self.sessions_popularity[
+            self.sessions_popularity["week_tuple"].isin(next_weeks)
+        ]
+        week_from = selected_rows.iloc[0]["week_tuple"]
+        week_to = selected_rows.iloc[-1]["week_tuple"]
+        count = (
+            selected_rows.groupby("track_id")["popularity"]
+            .sum()
+            .reset_index(name="popularity")
+            .sort_values(by="popularity", ascending=False)
+        )
+        return (count, (week_from, week_to))
+
     def group_by_weeks(self) -> None:
-        lenght = len(self.sessions_popularity.groupby(["year", "week"]))
+        self.sessions_popularity_per_weeks.clear()
+        length = len(self.sessions_popularity.groupby(["year", "week"]))
         next_weeks = [self._get_first_week()]
         for _ in range(self.week_count - 1):
             next_weeks.append(increase_week(next_weeks[-1]))
 
-        for _ in tqdm(range(lenght - self.week_count)):
-            selected_rows = self.sessions_popularity[
-                self.sessions_popularity["week_tuple"].isin(next_weeks)
-            ]
-            week_from = selected_rows.iloc[0]["week_tuple"]
-            week_to = selected_rows.iloc[-1]["week_tuple"]
-            count = (
-                selected_rows.groupby("track_id")["popularity"]
-                .sum()
-                .reset_index(name="popularity")
-                .sort_values(by="popularity", ascending=False)
-            )
-            self.sessions_popularity_per_weeks[(week_from, week_to)] = count
+        for _ in tqdm(range(length - self.week_count + 1)):
+            count, when = self.make_group(next_weeks)
+            self.sessions_popularity_per_weeks[when] = count
             next_weeks.append(increase_week(next_weeks[-1]))
             next_weeks = next_weeks[1:]
 
@@ -184,28 +190,27 @@ class Ranking:
     def make_test_for_every_frame(self, random=False):
         date = self._get_first_week()
         to_print = []
-        for _ in tqdm(range(len(self.sessions_popularity_per_weeks.keys()))):
+        for _ in tqdm(range(len(self.sessions_popularity_per_weeks.keys()) - 1)):
             to_print.append(
                 f"Ranking z tygodni: {date}-{increase_week(date, by=self.week_count-1)}. \
 Ilość trafień % w tygodniu {increase_week(date, by=self.week_count)}: {self.make_test(date, random=random)}%"
             )
             date = increase_week(date)
-        for line in to_print:
+        for line in to_print[:-1]:
             print(line)
 
     def compare_to_basic(self):
         date = self._get_first_week()
-        to_print = ["Period:    Which is better?"]
-        for _ in tqdm(range(len(self.sessions_popularity_per_weeks.keys()))):
+        to_print = {'basic': 0, 'extended': 0}
+        for _ in range(len(self.sessions_popularity_per_weeks.keys())):
             basic = self.make_test(date, random=True)
             extended = self.make_test(date, random=False)
-            to_print.append(
-                f"{date}-{increase_week(date, by=self.week_count-1)}: \
-    {'Basic' if basic > extended else 'Extended'}"
-            )
+            if basic > extended:
+                to_print['basic'] += 1
+            else:
+                to_print['extended'] += 1
             date = increase_week(date)
-        for line in to_print:
-            print(line)
+        return to_print
 
     def make_plot(self, track_id) -> None:
         year, week = (
@@ -236,6 +241,40 @@ Ilość trafień % w tygodniu {increase_week(date, by=self.week_count)}: {self.m
         last_week = list(self.sessions_popularity_per_weeks.keys())[-1][0]
         tracks = self.get_frame(last_week)
         return tracks
+
+
+    def add_new(self, json_data: json) -> None:
+        """
+        Making predictions for new json data. This new data is also added to model for future.
+        
+        Parameters
+        ----------
+        json_data: json
+            Data as a list of dicts.
+        """
+        pd_data = pd.DataFrame(json_data)
+        sessions = self.count_popularity(pd_data)
+        sessions['week'] = sessions['week'].astype(np.int64)
+        sessions['year'] = sessions['year'].astype(np.int64)
+        # merging new sessions to main sessions_popularity
+        self.sessions_popularity = self.sessions_popularity.drop(columns=["week_tuple"])
+        new_sessions = pd.concat([self.sessions_popularity, sessions], ignore_index=True)
+        combined_data = (
+            new_sessions.groupby(['year', 'week', 'track_id'])
+            .agg({"popularity": "sum"})
+            .reset_index()
+        )
+        self.sessions_popularity = combined_data.sort_values(
+            by=["year", "week", "popularity"], ascending=[True, True, False]
+        )
+        self.sessions_popularity["week_tuple"] = list(
+            zip(self.sessions_popularity["year"], self.sessions_popularity["week"])
+        )
+        self.group_by_weeks()
+        
+
+        
+        
 
 
 if __name__ == "__main__":
