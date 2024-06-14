@@ -17,11 +17,13 @@ def jsonl2df(path):
 
 def prepare_grouping(tracks="datav2/artists.jsonl", artists="datav2/tracks.jsonl", ranking_result=None, with_onehotencoding=False):
     # Load data
-    artists = jsonl2df("datav2/artists.jsonl")
-    tracks = jsonl2df("datav2/tracks.jsonl")
+    if isinstance(tracks, str):
+        tracks = jsonl2df("datav2/tracks.jsonl")
+    if isinstance(artists, str):
+        artists = jsonl2df("datav2/artists.jsonl")
 
     # Get popular tracks within last week
-    if ranking_result:
+    if ranking_result is not None:
         tracks = tracks[tracks['id'].isin(ranking_result['track_id'])]
 
     # Join tracks with artists
